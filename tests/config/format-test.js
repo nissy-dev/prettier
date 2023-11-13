@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import url from "node:url";
+import Crypto from "node:crypto";
+import { execa } from "execa";
 import createEsmUtils from "esm-utils";
 import getPrettier from "./get-prettier.js";
 import checkParsers from "./utils/check-parsers.js";
@@ -508,10 +510,10 @@ async function format(originalText, originalOptions) {
   );
   const inputWithCursor = insertCursor(input, options.cursorOffset);
   const prettier = await getPrettier();
-
-  const { formatted: output, cursorOffset } = await ensurePromise(
+  const { formatted: _output, cursorOffset } = await ensurePromise(
     prettier.formatWithCursor(input, options),
   );
+  const { formatted: output } = await biomeFormat(input, options);
   const outputWithCursor = insertCursor(output, cursorOffset);
   const eolVisualizedOutput = visualizeEndOfLine(outputWithCursor);
 
@@ -526,6 +528,42 @@ async function format(originalText, originalOptions) {
     outputWithCursor,
     eolVisualizedOutput,
   };
+}
+
+async function biomeFormat(input, options) {
+  const buildBiomeCliArgs = (options) => [
+    `--quote-style=${options.singleQuote ? "single" : "double"}`,
+    `--quote-properties=${
+      options.quoteProps === "preserve" ? "preserve" : "as-needed"
+    }`,
+    `--trailing-comma=${options.trailingComma || "all"}`,
+    `--semicolons=${options.semi === false ? "as-needed" : "always"}`,
+    `--arrow-parentheses=${
+      options.arrowParens === "avoid" ? "as-needed" : "always"
+    }`,
+    `--indent-style=${options.useTabs === true ? "tab" : "space"}`,
+    `--indent-size=${options.tabWidth || "2"}`,
+    `--line-width=${options.printWidth || "80"}`,
+  ];
+
+  const tmpFilePath = `./tmp/${Crypto.randomUUID()}.js`;
+  fs.mkdirSync(path.dirname(tmpFilePath), { recursive: true });
+  fs.writeFileSync(tmpFilePath, input, "utf8");
+
+  let formatted;
+  try {
+    await execa("biome", [
+      "format",
+      "--write",
+      ...buildBiomeCliArgs(options),
+      tmpFilePath,
+    ]);
+    formatted = fs.readFileSync(tmpFilePath, "utf8");
+  } finally {
+    fs.unlinkSync(tmpFilePath);
+  }
+
+  return { formatted };
 }
 
 export default runSpec;
