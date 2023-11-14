@@ -89,6 +89,7 @@ const config = {
     "jest-watch-typeahead/filename",
     "jest-watch-typeahead/testname",
   ],
+  reporters: ["default", "jest-stare"],
 };
 
 export default config;
